@@ -1,0 +1,20 @@
+{
+    "name": "@post-event/composite-technical-assessment-ml",
+    "version": "1.0.0",
+    "type": "module",
+    "description": "",
+    "main": "dist/index.js",
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1",
+      "build": "tsc",
+      "start": "node dist/index.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+      "@types/node": "^24.7.1",
+      "typescript": "^5.9.3"
+    }
+  }
+  
