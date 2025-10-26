@@ -37,7 +37,7 @@ You may use either **Python** or **Typescript / Javascript** as your language of
    - Implement realistic trajectory generation logic
    - Include common user workflows (e.g., form filling, shopping, research)
    - Add controlled variability to prevent overfitting
-   - Generate at least 1000 trajectories with varying action lengths (3 - 10 steps)
+   - Generate at least 100 trajectories with varying action lengths (3 - 10 steps)
 
 4. **Data Quality & Validation**
    - Implement checks for data consistency and validity
@@ -52,7 +52,7 @@ You may use either **Python** or **Typescript / Javascript** as your language of
    - Requirements.txt / environment.yml or package.json
 
 2. **Generated Dataset**
-   - Sample of 1000 trajectories in your chosen format
+   - Sample of 100 trajectories in your chosen format
    - Summary statistics of the full generated dataset
 
 3. **Documentation**
