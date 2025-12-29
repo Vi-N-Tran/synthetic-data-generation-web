@@ -206,6 +206,9 @@ class TrajectoryGenerator:
             element_text = action_data.get('element_text')
             element_id = action_data.get('element_id')
             element_classes = action_data.get('element_classes')
+            # Ensure element_classes is a list if provided
+            if element_classes and isinstance(element_classes, str):
+                element_classes = [element_classes]
             
             click_action = create_click_action(
                 timestamp=next_timestamp,
@@ -477,8 +480,8 @@ class TrajectoryGenerator:
         """
         Generate multiple trajectories to form a complete dataset.
         
-        This method generates the specified number of trajectories, applies
-        deduplication if enabled, and returns both the trajectories and
+        This method generates the specified number of trajectories in parallel,
+        applies deduplication if enabled, and returns both the trajectories and
         deduplication statistics.
         
         Args:
@@ -496,25 +499,40 @@ class TrajectoryGenerator:
             - Failed trajectory generations are logged but don't stop the process
             - Progress is logged every 10 trajectories
             - Deduplication is applied if enabled in config
+            - Uses parallel processing with ThreadPoolExecutor for faster generation
         """
-        logger.info(f"Starting generation of {n_trajectories} trajectories...")
+        logger.info(f"Starting generation of {n_trajectories} trajectories (with parallelization)...")
         trajectories = []
         failed_count = 0
         
-        for i in range(n_trajectories):
-            try:
-                logger.debug(f"Generating trajectory {i + 1}/{n_trajectories}...")
-                trajectory = self.generate_trajectory()
-                trajectories.append(trajectory)
-                logger.debug(f"Trajectory {i + 1} generated: {trajectory.trajectory_id} ({len(trajectory.actions)} actions)")
-                
-                if (i + 1) % 10 == 0:
-                    logger.info(f"Progress: {i + 1}/{n_trajectories} trajectories generated")
-            except Exception as e:
-                failed_count += 1
-                logger.warning(f"Failed to generate trajectory {i+1}: {e}", exc_info=False)
-                logger.debug(f"Trajectory {i+1} generation error details:", exc_info=True)
-                continue
+        # Get max workers from config or use default (5 workers for parallel LLM calls)
+        max_workers = self.config.get('generator', {}).get('max_workers', 5)
+        logger.debug(f"Using {max_workers} parallel workers for trajectory generation")
+        
+        # Generate trajectories in parallel batches
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all trajectory generation tasks
+            future_to_index = {
+                executor.submit(self.generate_trajectory): i 
+                for i in range(n_trajectories)
+            }
+            
+            # Process completed futures as they finish
+            completed = 0
+            for future in as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    trajectory = future.result()
+                    trajectories.append(trajectory)
+                    completed += 1
+                    logger.debug(f"Trajectory {index + 1} generated: {trajectory.trajectory_id} ({len(trajectory.actions)} actions)")
+                    
+                    if completed % 10 == 0:
+                        logger.info(f"Progress: {completed}/{n_trajectories} trajectories generated")
+                except Exception as e:
+                    failed_count += 1
+                    logger.warning(f"Failed to generate trajectory {index+1}: {e}", exc_info=False)
+                    logger.debug(f"Trajectory {index+1} generation error details:", exc_info=True)
         
         if failed_count > 0:
             logger.warning(f"{failed_count} trajectory generation attempts failed")
