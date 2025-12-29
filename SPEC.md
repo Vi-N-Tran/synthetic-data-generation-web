@@ -858,53 +858,73 @@ mypy>=1.0.0               # Type checking
 
 ## 11. Future Enhancements
 
-1. **Enhanced LLM Integration**: Expand LLM usage for more complex scenarios (multi-step workflows, error recovery patterns, advanced user behaviors)
-2. **Visual Features**: Add screenshot embeddings for visual element selection
-3. **Multi-modal**: Include image/audio/voice interaction patterns
-4. **A/B Testing**: Generate variants for model comparison
-5. **Domain Adaptation**: Fine-tune generation for specific websites
+11.1 Real User Data Integration
 
-### 11.1 Real User Data Integration
+Objective: Allow seamless ingestion of anonymized real user interaction data into the synthetic generation pipeline.
 
-**Objective:** Allow seamless ingestion of anonymized real user interaction data into the synthetic generation pipeline.
+Considerations:
 
-**Considerations:**
+Privacy: Strip personally identifiable information (PII) and sensitive fields (emails, passwords, tokens).
 
-- **Privacy**: Strip personally identifiable information (PII) and sensitive fields (emails, passwords, tokens).
-- **Sanitization & Normalization**: Standardize selectors, URLs, and DOM structure across sessions.
-- **Hybrid Datasets**: Mix synthetic and real trajectories to improve model robustness.
-- **Schema Alignment**: Ensure real user data maps cleanly to `BrowserAction` and `Trajectory` schemas.
+Sanitization & Normalization: Standardize selectors, URLs, and DOM structure across sessions.
 
-### 11.2 Enhanced Validation
+Hybrid Datasets: Mix synthetic and real trajectories to improve model robustness.
 
-**Additional Checks:**
+Schema Alignment: Ensure real user data maps cleanly to BrowserAction and Trajectory schemas.
 
-- **Cross-trajectory consistency**: Validate that related workflows don't contradict each other (e.g., cart never emptied mid-transaction).
-- **Temporal realism**: Check for unrealistic action intervals or simultaneous conflicting actions.
-- **Domain-specific rules**: Workflow-specific constraints (e.g., e-commerce: checkout only after add-to-cart).
-- **Selector sanity**: Validate element selectors against real or reference DOM structures.
-- **LLM output verification**: Automatically detect hallucinated URLs, page titles, or action sequences.
+11.2 Enhanced Validation
 
-### 11.3 Prevention of Model Overfitting
+Additional Checks:
 
-**Synthetic Variability:**
+Cross-Trajectory Consistency: Validate that related workflows don't contradict each other (e.g., cart never emptied mid-transaction).
 
-- Ensure multiple paths to the same goal exist (trajectory diversification).
-- Increase action sequence diversity for similar workflows.
-- Vary element selectors, URLs, and page titles even for similar actions.
-- Introduce controlled randomness in user behavior patterns.
+Temporal Realism: Check for unrealistic action intervals or simultaneous conflicting actions.
 
-### 11.6 Feedback Loop for Data Quality
+Domain-Specific Rules: Workflow-specific constraints (e.g., e-commerce: checkout only after add-to-cart).
 
-**Objective:** Implement mechanisms to monitor ML model performance on generated datasets and iteratively improve data quality.
+Selector Sanity: Validate element selectors against real or reference DOM structures.
 
-**Components:**
+LLM Output Verification: Automatically detect hallucinated URLs, page titles, or action sequences.
 
-- **Performance Monitoring**: Track ML model performance metrics (accuracy, loss, generalization) on generated datasets.
-- **Iterative Refinement**: Use model performance signals to iteratively refine generation parameters and LLM prompts.
-- **Human-in-the-Loop Validation**: Enable human validation for high-value workflows to identify quality issues and improve generation.
-- **Quality Metrics**: Define and track data quality metrics that correlate with model performance.
-- **Automated Feedback**: Automatically adjust generation parameters based on model performance feedback.
+11.3 Prevention of Model Overfitting
+
+Synthetic Variability:
+
+Ensure multiple paths to the same goal exist (trajectory diversification).
+
+Increase action sequence diversity for similar workflows.
+
+Vary element selectors, URLs, and page titles even for similar actions.
+
+Introduce controlled randomness in user behavior patterns.
+
+11.4 Feedback Loop for Data Quality
+
+Objective: Implement mechanisms to monitor ML model performance on generated datasets and iteratively improve data quality.
+
+Components:
+
+Performance Monitoring: Track ML model metrics (accuracy, loss, generalization) on generated datasets.
+
+Iterative Refinement: Use model performance signals to refine generation parameters and LLM prompts.
+
+Human-in-the-Loop Validation: Enable human validation for high-value workflows to identify quality issues.
+
+Quality Metrics: Define and track data quality metrics that correlate with model performance.
+
+Automated Feedback: Adjust generation parameters automatically based on model performance feedback.
+
+11.5 Additional Future Enhancements
+
+Enhanced LLM Integration: Expand LLM usage for multi-step workflows, error recovery patterns, and advanced user behaviors.
+
+Visual Features: Add screenshot embeddings for visual element selection.
+
+Multi-Modal: Include image, audio, or voice interaction patterns.
+
+A/B Testing: Generate variants for model comparison.
+
+Domain Adaptation: Fine-tune generation for specific websites.
 
 ---
 

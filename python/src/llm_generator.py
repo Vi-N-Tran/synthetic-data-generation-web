@@ -275,9 +275,15 @@ Each action object SHOULD have:
 - "user_intent": string (semantic intent: "add_to_cart", "search", "submit_form", etc.)
 - "is_intentional": boolean (usually true for workflow actions)
 
+ELEMENT DATA (REQUIRED for click, type, select actions):
+- "element_selector": string (realistic CSS selector, e.g., "button[data-testid='add-to-cart']", "#search-input", ".product-card__title")
+- "element_text": string or null (visible text content of the element)
+- "element_id": string or null (HTML id attribute)
+- "element_classes": array of strings (CSS class names, e.g., ["btn", "btn-primary"])
+
 Action-type-specific fields:
-- For "type" actions: include "value" (string) or "value_hint" (string), and "field_type" (string)
-- For "select" actions: include "option_index" (integer)
+- For "type" actions: MUST include "value" (string with realistic text to type, e.g., "laptop", "user@example.com", "John Doe") and "field_type" (string, e.g., "search_query", "email", "name")
+- For "select" actions: include "option_index" (integer, 0-based)
 - For "scroll" actions: include "coordinates" (object with "x" and "y" integers)
 
 Example structure:
@@ -303,7 +309,11 @@ Example structure:
             "user_intent": "search",
             "is_intentional": true,
             "field_type": "search_query",
-            "value_hint": "product name"
+            "value": "wireless headphones",
+            "element_selector": "#search-input",
+            "element_text": null,
+            "element_id": "search-input",
+            "element_classes": ["search-field", "form-control"]
         }},
         {{
             "action_type": "click",
@@ -312,10 +322,32 @@ Example structure:
             "page_title": "Example Store - Home",
             "context": "Click search button",
             "user_intent": "search",
-            "is_intentional": true
+            "is_intentional": true,
+            "element_selector": "button[type='submit'].search-btn",
+            "element_text": "Search",
+            "element_id": "search-submit",
+            "element_classes": ["btn", "btn-primary", "search-btn"],
+            "element_visible": true,
+            "element_clickable": true
+        }},
+        {{
+            "action_type": "click",
+            "element_type": "button",
+            "url": "https://example-store.com/search",
+            "page_title": "Search Results",
+            "context": "Try to click 'Add to Cart' but button not yet loaded",
+            "user_intent": "add_to_cart",
+            "is_intentional": true,
+            "element_visible": false,
+            "element_clickable": false
         }}
     ]
 }}
+
+VARIABILITY REQUIREMENTS:
+- Include some realistic error cases: Occasionally set "element_visible": false or "element_clickable": false for click/type actions (e.g., 10-20% of click/type actions). This simulates elements not yet loaded, hidden by CSS, or disabled buttons.
+- Include trajectories where users skip optional steps but still achieve the goal: Some workflows can succeed with fewer steps if users take shortcuts (e.g., directly clicking a deep link instead of navigating through pages).
+- When goal_achieved is true despite errors, show recovery behavior (user tries alternative approach, waits for element to load, etc.).
 
 IMPORTANT:
 - Return ONLY valid JSON (no markdown, no code blocks, no explanations)
@@ -323,7 +355,11 @@ IMPORTANT:
 - All action_type values must be from the valid list above
 - Generate exactly {num_actions} actions (or close to it)
 - Make sequences realistic for a {user_type} user
-- Match user behavior patterns for {user_type} (speed, exploration, etc.)"""
+- Match user behavior patterns for {user_type} (speed, exploration, etc.)
+- For click/type/select actions, ALWAYS include complete element data (selector, text, id, classes)
+- For click/type actions, optionally include "element_visible" and "element_clickable" boolean fields (default to true if not specified)
+- Generate realistic CSS selectors using modern patterns (data attributes, semantic selectors, class combinations)
+- For "type" actions, generate realistic input values (not placeholders or hints - actual values like "laptop", "john.doe@email.com")"""
 
         try:
             # Try to use response_format for structured output if available

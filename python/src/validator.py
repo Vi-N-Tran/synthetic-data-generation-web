@@ -1,4 +1,12 @@
-"""Validation logic for trajectories and actions"""
+"""
+Validation logic for trajectories and actions.
+
+This module provides comprehensive validation functions to ensure data quality:
+- Trajectory-level validation (action count, temporal ordering, etc.)
+- Action-level validation (required fields, type matching, etc.)
+- URL and selector format validation
+- Dataset-level validation with error reporting
+"""
 
 from typing import List, Dict, Any
 from src.schema import Trajectory, BrowserAction
@@ -12,11 +20,23 @@ def validate_trajectory(trajectory: Trajectory) -> bool:
     """
     Validate a single trajectory for consistency and correctness.
     
+    Performs comprehensive validation including:
+    - Action count (must be 3-10)
+    - Temporal ordering (timestamps must be increasing)
+    - Action ID uniqueness
+    - URL consistency
+    - Individual action validation
+    
     Args:
-        trajectory: Trajectory to validate
+        trajectory: Trajectory object to validate
         
     Returns:
-        True if valid, False otherwise
+        True if trajectory is valid, False otherwise
+    
+    Note:
+        This function validates structure and consistency, not semantic correctness.
+        For example, it checks that timestamps are ordered but doesn't verify
+        that action sequences make logical sense.
     """
     # Trajectory-Level Validation
     if not (3 <= len(trajectory.actions) <= 10):
@@ -56,15 +76,25 @@ def validate_trajectory(trajectory: Trajectory) -> bool:
 
 def validate_action(action: BrowserAction, index: int, all_actions: List[BrowserAction]) -> bool:
     """
-    Validate a single action.
+    Validate a single browser action for correctness.
+    
+    Validates:
+    - Required fields are present (timestamp, action_type, url, action_id)
+    - Action type is valid (one of 12 supported types)
+    - Action type matches parameters (e.g., 'type' has value, 'select' has option_index)
+    - Timestamp is positive
+    - Coordinates are valid (if present)
+    - Confidence is in range [0, 1]
+    - URL format is valid
+    - Selector format is valid (if present)
     
     Args:
-        action: Action to validate
-        index: Index of action in trajectory
-        all_actions: All actions in trajectory
+        action: BrowserAction object to validate
+        index: Index of action in trajectory (for error reporting)
+        all_actions: All actions in the trajectory (for context)
         
     Returns:
-        True if valid, False otherwise
+        True if action is valid, False otherwise
     """
     # Required fields
     if not action.timestamp or action.timestamp <= 0:
@@ -128,7 +158,24 @@ def validate_action(action: BrowserAction, index: int, all_actions: List[Browser
 
 
 def validate_url(url: str) -> bool:
-    """Validate URL format"""
+    """
+    Validate URL format using regex pattern.
+    
+    Checks for:
+    - Valid HTTP/HTTPS protocol
+    - Valid domain name or IP address
+    - Optional port number
+    - Optional path/query string
+    
+    Args:
+        url: URL string to validate
+        
+    Returns:
+        True if URL format is valid, False otherwise
+    
+    Note:
+        This is a basic validation - it checks format, not accessibility.
+    """
     if not url:
         return False
     
@@ -145,7 +192,25 @@ def validate_url(url: str) -> bool:
 
 
 def validate_selector(selector: str) -> bool:
-    """Validate CSS selector format (basic validation)"""
+    """
+    Validate CSS selector format (basic security and format checks).
+    
+    Checks for:
+    - Non-empty selector
+    - No dangerous patterns (javascript:, data:, vbscript:)
+    - Reasonable length (max 500 characters)
+    
+    Args:
+        selector: CSS selector string to validate
+        
+    Returns:
+        True if selector appears safe and valid, False otherwise
+    
+    Note:
+        This is a basic validation - it doesn't verify selector syntax correctness
+        or that the selector would match any elements. It focuses on security
+        and basic format checks.
+    """
     if not selector:
         return False
     
@@ -164,13 +229,25 @@ def validate_selector(selector: str) -> bool:
 
 def validate_dataset(trajectories: List[Trajectory]) -> Dict[str, Any]:
     """
-    Validate entire dataset and return validation report.
+    Validate entire dataset and return comprehensive validation report.
+    
+    Validates all trajectories in the dataset and provides aggregate statistics
+    including validation pass rate and error details.
     
     Args:
-        trajectories: List of trajectories to validate
+        trajectories: List of Trajectory objects to validate
         
     Returns:
-        Dictionary with validation results
+        Dictionary with validation results:
+            - total_trajectories: Total number of trajectories
+            - valid: Number of valid trajectories
+            - invalid: Number of invalid trajectories
+            - validation_pass_rate: Ratio of valid to total (0.0 to 1.0)
+            - errors: List of error details (limited to first 10)
+    
+    Note:
+        Error details include trajectory_id and index for debugging.
+        Only first 10 errors are included to prevent large output.
     """
     total = len(trajectories)
     valid = 0

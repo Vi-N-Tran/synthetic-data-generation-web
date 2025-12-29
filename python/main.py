@@ -36,7 +36,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     return {
         "generator": {
             "seed": 42,
-            "n_trajectories": 1, # 100
+            "n_trajectories": 100, 
             "min_actions": 3,
             "max_actions": 10,
             "workflow_distribution": {
@@ -48,7 +48,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
         "output": {
             "format": "jsonl",
             "path": "output/trajectories",
-            "sample_size": 1, # 10
+            "sample_size": 10, 
             "include_dom_snapshot": False
         }
     }
@@ -56,8 +56,35 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
 
 def main():
     """
-    Main execution function.
-    Generates synthetic browser trajectory dataset using LLM-based generation.
+    Main execution function for the browser trajectory dataset generator.
+    
+    This function orchestrates the complete pipeline:
+    1. Loads configuration from file or uses defaults
+    2. Loads API key from environment or config file
+    3. Initializes the TrajectoryGenerator
+    4. Generates the specified number of trajectories
+    5. Validates all generated trajectories
+    6. Computes dataset statistics
+    7. Writes output files (JSONL/Parquet, metadata, statistics)
+    
+    Configuration:
+        - Config file: config/generator_config.json
+        - API key: OPENAI_API_KEY or OPENROUTER_API_KEY environment variable
+        - Or API key file: config/openai_api_key.txt or config/openrouter_api_key.txt
+    
+    Output:
+        - Trajectories file (JSONL or Parquet) in output/ directory
+        - Metadata JSON file
+        - Statistics JSON file
+    
+    Environment Variables:
+        - VERBOSE: Set to "true" for detailed debug logging
+        - OPENAI_API_KEY: OpenAI API key (if not using OpenRouter)
+        - OPENROUTER_API_KEY: OpenRouter API key (if using OpenRouter)
+    
+    Exits:
+        - Exit code 1 if API key is not found
+        - Exit code 1 if generation fails critically
     """
     # Set up logging
     verbose = os.getenv("VERBOSE", "false").lower() == "true"

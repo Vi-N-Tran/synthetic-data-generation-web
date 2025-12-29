@@ -1,4 +1,13 @@
-"""Statistics computation for generated datasets"""
+"""
+Statistics computation for generated datasets.
+
+This module provides functions to compute comprehensive statistics over
+generated trajectory datasets, including:
+- Dataset-level metrics (trajectory counts, lengths, durations)
+- Action-level distributions (action types, element types)
+- User behavior patterns (intentional vs exploratory, error rates)
+- Quality metrics (confidence scores, backtrack frequency)
+"""
 
 from typing import Dict, List, Any
 from collections import Counter, defaultdict
@@ -7,13 +16,34 @@ from src.schema import Trajectory, BrowserAction
 
 def compute_dataset_statistics(trajectories: List[Trajectory]) -> Dict[str, Any]:
     """
-    Compute statistics over the generated dataset.
+    Compute comprehensive statistics over the generated dataset.
+    
+    Calculates statistics at multiple levels:
+    - Dataset-level: Total trajectories, average length, workflow distribution
+    - Trajectory-level: Goal achievement rate, duration, user/device/browser types
+    - Action-level: Action type distribution, element types, intervals
+    - Quality metrics: Error rates, confidence scores, backtrack frequency
     
     Args:
-        trajectories: List of trajectories
+        trajectories: List of Trajectory objects to analyze
         
     Returns:
-        Dictionary with computed statistics
+        Dictionary with computed statistics including:
+            - n_trajectories: Total number of trajectories
+            - n_actions: Total number of actions
+            - avg_trajectory_length: Average actions per trajectory
+            - trajectory_length_distribution: Count of trajectories by length
+            - workflow_type_distribution: Count by workflow type
+            - user_type_distribution: Count by user type
+            - goal_achievement_rate: Ratio of trajectories achieving goals
+            - action_type_distribution: Count of each action type
+            - error_rate: Ratio of actions with errors
+            - avg_confidence: Average confidence score
+            - And many more metrics...
+    
+    Note:
+        Returns empty statistics dict if trajectories list is empty.
+        All numeric values are rounded to 2-3 decimal places for readability.
     """
     if not trajectories:
         return {

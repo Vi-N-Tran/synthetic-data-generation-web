@@ -1,4 +1,13 @@
-"""Dataset writer for JSONL and optional Parquet formats"""
+"""
+Dataset writer for JSONL and optional Parquet formats.
+
+This module handles writing generated trajectories to disk in various formats:
+- JSONL (JSON Lines): Human-readable, one trajectory per line
+- Parquet: Efficient columnar format for ML pipelines
+- Metadata and statistics files: JSON format
+
+All output files use timestamped filenames to prevent overwriting.
+"""
 
 import json
 import os
@@ -11,7 +20,21 @@ logger = get_logger('writer')
 
 
 def _get_timestamped_filename(base_path: str, base_name: str, extension: str) -> str:
-    """Generate a timestamped filename to avoid overwriting existing files"""
+    """
+    Generate a timestamped filename to avoid overwriting existing files.
+    
+    Args:
+        base_path: Base path (directory or file path)
+        base_name: Base name for the file (without extension)
+        extension: File extension (e.g., '.jsonl', '.parquet')
+    
+    Returns:
+        Full file path with timestamp in format: {base_name}_{YYYYMMDD_HHMMSS}{extension}
+    
+    Example:
+        >>> _get_timestamped_filename('output', 'trajectories', '.jsonl')
+        'output/trajectories_20241228_143022.jsonl'
+    """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     if os.path.isdir(base_path):
@@ -24,15 +47,43 @@ def _get_timestamped_filename(base_path: str, base_name: str, extension: str) ->
 
 
 class DatasetWriter:
-    """Handles saving trajectories to disk in JSONL or Parquet format"""
+    """
+    Handles saving trajectories to disk in JSONL or Parquet format.
+    
+    This class manages writing generated trajectories to various output formats
+    with proper file naming, metadata generation, and statistics computation.
+    All output files use timestamped filenames to prevent overwriting.
+    
+    Attributes:
+        output_path: Base output path
+        config: Configuration dictionary
+        _actual_output_file: Path to the written trajectories file
+        _sample_file: Path to JSONL sample (if Parquet format used)
+        _metadata_file: Path to metadata JSON file
+        _stats_file: Path to statistics JSON file
+    
+    Example:
+        >>> writer = DatasetWriter('output', config)
+        >>> writer.write(trajectories)
+        >>> writer.write_metadata(metadata)
+        >>> writer.write_statistics(stats)
+    """
     
     def __init__(self, output_path: str, config: Optional[Dict[str, Any]] = None):
         """
         Initialize dataset writer.
         
         Args:
-            output_path: Base output path (directory or file path)
-            config: Configuration dict with output settings
+            output_path: Base output path (directory or file path).
+                If directory, files will be created inside it.
+                If file path, directory will be extracted and files created there.
+            config: Configuration dictionary with output settings:
+                - output.format: 'jsonl' or 'parquet'
+                - output.sample_size: Number of trajectories for JSONL sample (if Parquet)
+                - output.include_dom_snapshot: Whether to include DOM snapshots
+        
+        Note:
+            Creates output directory if it doesn't exist.
         """
         self.output_path = output_path
         self.config = config or {}

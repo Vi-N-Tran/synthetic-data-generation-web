@@ -1,7 +1,15 @@
-"""Trajectory generator using LLM for realistic data generation"""
+"""
+Trajectory generator using LLM for realistic data generation.
+
+This module implements the TrajectoryGenerator class, which orchestrates the
+creation of complete browser interaction trajectories. It uses LLMDataGenerator
+to create realistic action sequences and then converts them into BrowserAction
+and Trajectory objects with proper temporal relationships.
+"""
 
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Any, Tuple
 from src.schema import BrowserAction, Trajectory
 from src.llm_generator import LLMDataGenerator
@@ -23,9 +31,28 @@ logger = get_logger('generator')
 
 
 class TrajectoryGenerator:
-    """Generates synthetic trajectories using LLM"""
+    """
+    Generates synthetic browser interaction trajectories using LLM.
     
-    # Workflow types and goals
+    This class orchestrates the generation of complete trajectories by:
+    1. Selecting workflow type and goal based on configuration
+    2. Using LLM to generate realistic action sequences
+    3. Converting LLM output to BrowserAction objects with temporal relationships
+    4. Creating Trajectory objects with metadata and computed properties
+    5. Applying deduplication if enabled
+    
+    Attributes:
+        config: Configuration dictionary with generation parameters
+        llm_generator: LLMDataGenerator instance for generating action data
+        WORKFLOW_GOALS: Dictionary mapping workflow types to available goals
+    
+    Example:
+        >>> config = {'generator': {'n_trajectories': 10, 'seed': 42}}
+        >>> generator = TrajectoryGenerator(config, api_key='...')
+        >>> trajectories, stats = generator.generate_dataset(10)
+    """
+    
+    # Workflow types and their associated goals
     WORKFLOW_GOALS = {
         'e_commerce': [
             'purchase_product',
@@ -49,12 +76,19 @@ class TrajectoryGenerator:
     
     def __init__(self, config: Optional[Dict[str, Any]] = None, api_key: Optional[str] = None, use_openrouter: bool = False):
         """
-        Initialize the generator.
+        Initialize the trajectory generator.
         
         Args:
-            config: Configuration dict for generation parameters
-            api_key: API key (OpenAI or OpenRouter)
+            config: Configuration dictionary with generation parameters:
+                - generator.seed: Random seed for reproducibility
+                - generator.workflow_distribution: Dict of workflow type probabilities
+                - generator.deduplication.enabled: Whether to deduplicate trajectories
+            api_key: API key for OpenAI or OpenRouter (if None, reads from env vars)
             use_openrouter: If True, use OpenRouter API instead of OpenAI
+        
+        Note:
+            If a seed is provided in config, it will be set for random number generation
+            to ensure reproducible results.
         """
         self.config = config or {}
         self.llm_generator = LLMDataGenerator(api_key=api_key, use_openrouter=use_openrouter)
@@ -65,7 +99,16 @@ class TrajectoryGenerator:
             random.seed(seed)
     
     def _select_workflow_type(self) -> str:
-        """Select workflow type based on distribution"""
+        """
+        Select a workflow type based on configured distribution.
+        
+        Returns:
+            One of 'e_commerce', 'form_filling', or 'research' based on
+            weighted random selection from config.workflow_distribution
+        
+        Note:
+            Default distribution is 40% e_commerce, 30% form_filling, 30% research
+        """
         distribution = self.config.get('generator', {}).get(
             'workflow_distribution',
             {'e_commerce': 0.4, 'form_filling': 0.3, 'research': 0.3}
@@ -75,7 +118,15 @@ class TrajectoryGenerator:
         return random.choices(workflow_types, weights=weights)[0]
     
     def _select_goal(self, workflow_type: str) -> str:
-        """Select a goal for the workflow type"""
+        """
+        Select a random goal for the given workflow type.
+        
+        Args:
+            workflow_type: One of 'e_commerce', 'form_filling', or 'research'
+        
+        Returns:
+            A goal string from WORKFLOW_GOALS, or 'complete_task' if unknown
+        """
         goals = self.WORKFLOW_GOALS.get(workflow_type, ['complete_task'])
         return random.choice(goals)
     
@@ -89,7 +140,30 @@ class TrajectoryGenerator:
         workflow_type: str,
         user_type: str
     ) -> BrowserAction:
-        """Convert LLM-generated action data to BrowserAction object"""
+        """
+        Convert LLM-generated action data dictionary to BrowserAction object.
+        
+        This method:
+        1. Extracts action data from LLM response
+        2. Calculates realistic timestamp offsets based on action type and user behavior
+        3. Creates appropriate BrowserAction using action factory functions
+        4. Preserves element_visible and element_clickable flags from LLM if provided
+        
+        Args:
+            action_data: Dictionary from LLM containing action structure
+            timestamp: Base timestamp in milliseconds
+            session_id: Browser session identifier
+            tab_id: Browser tab identifier
+            action_id: Unique identifier for this action
+            workflow_type: Type of workflow (for context)
+            user_type: User behavior type (for temporal calculations)
+        
+        Returns:
+            BrowserAction object with proper temporal relationships
+        
+        Raises:
+            ValueError: If action_type is not recognized
+        """
         action_type = action_data['action_type']
         url = action_data.get('url', 'https://example.com')
         page_title = action_data.get('page_title', 'Page')
@@ -127,7 +201,13 @@ class TrajectoryGenerator:
             )
         elif action_type == 'click':
             element_type = action_data.get('element_type', 'button')
-            return create_click_action(
+            # Extract element data from LLM response if provided (avoids additional LLM call)
+            selector = action_data.get('element_selector')
+            element_text = action_data.get('element_text')
+            element_id = action_data.get('element_id')
+            element_classes = action_data.get('element_classes')
+            
+            click_action = create_click_action(
                 timestamp=next_timestamp,
                 element_type=element_type,
                 url=url,
@@ -139,12 +219,26 @@ class TrajectoryGenerator:
                 context=context,
                 user_intent=user_intent,
                 is_intentional=is_intentional,
-                llm_generator=self.llm_generator
+                llm_generator=self.llm_generator if not selector else None,  # Skip LLM call if data provided
+                selector=selector,
+                element_text=element_text,
+                element_id=element_id,
+                element_classes=element_classes
             )
+            # Override element_visible and element_clickable if provided by LLM
+            if 'element_visible' in action_data:
+                click_action.element_visible = bool(action_data['element_visible'])
+            if 'element_clickable' in action_data:
+                click_action.element_clickable = bool(action_data['element_clickable'])
+            return click_action
         elif action_type == 'type':
             field_type = action_data.get('field_type', 'text')
             value = action_data.get('value') or action_data.get('value_hint', '')
-            return create_type_action(
+            # Extract element data from LLM response if provided (avoids additional LLM call)
+            selector = action_data.get('element_selector')
+            element_id = action_data.get('element_id')
+            
+            type_action = create_type_action(
                 timestamp=next_timestamp,
                 url=url,
                 page_title=page_title,
@@ -156,9 +250,17 @@ class TrajectoryGenerator:
                 context=context,
                 user_intent=user_intent,
                 is_intentional=is_intentional,
-                llm_generator=self.llm_generator,
-                value=value
+                llm_generator=self.llm_generator if not (selector and value) else None,  # Skip LLM call if data provided
+                selector=selector,
+                value=value,
+                element_id=element_id
             )
+            # Override element_visible and element_clickable if provided by LLM
+            if 'element_visible' in action_data:
+                type_action.element_visible = bool(action_data['element_visible'])
+            if 'element_clickable' in action_data:
+                type_action.element_clickable = bool(action_data['element_clickable'])
+            return type_action
         elif action_type == 'scroll':
             return create_scroll_action(
                 timestamp=next_timestamp,
@@ -172,6 +274,10 @@ class TrajectoryGenerator:
             )
         elif action_type == 'select':
             option_index = action_data.get('option_index', random.randint(0, 4))
+            # Extract element data from LLM response if provided (avoids additional LLM call)
+            selector = action_data.get('element_selector')
+            element_id = action_data.get('element_id')
+            
             return create_select_action(
                 timestamp=next_timestamp,
                 url=url,
@@ -184,7 +290,9 @@ class TrajectoryGenerator:
                 option_index=option_index,
                 user_intent=user_intent,
                 is_intentional=is_intentional,
-                llm_generator=self.llm_generator
+                llm_generator=self.llm_generator if not selector else None,  # Skip LLM call if data provided
+                selector=selector,
+                element_id=element_id
             )
         elif action_type == 'submit':
             return create_submit_action(
@@ -227,10 +335,33 @@ class TrajectoryGenerator:
     
     def generate_trajectory(self, **kwargs) -> Trajectory:
         """
-        Generate a single trajectory using LLM.
+        Generate a single complete trajectory using LLM.
+        
+        This is the main trajectory generation method. It:
+        1. Selects workflow type and goal
+        2. Determines trajectory length (3-10 actions)
+        3. Calls LLM to generate action sequence structure
+        4. Converts LLM output to BrowserAction objects with temporal relationships
+        5. Creates Trajectory object with metadata
+        
+        Args:
+            **kwargs: Optional keyword arguments:
+                - workflow_type: Override workflow type selection
+                - goal: Override goal selection
+                - user_type: Override user type selection
+                - num_actions: Override number of actions
         
         Returns:
-            Generated Trajectory object
+            Trajectory object with 3-10 actions, proper timestamps, and metadata
+        
+        Raises:
+            ValueError: If LLM returns invalid structure or too few actions
+        
+        Note:
+            Temporal relationships are calculated based on:
+            - Action type (navigate takes longer than click)
+            - User type (power_user is faster than first_time)
+            - Action context (important actions take longer)
         """
         # Select workflow type and goal
         workflow_type = kwargs.get('workflow_type') or self._select_workflow_type()
@@ -344,13 +475,27 @@ class TrajectoryGenerator:
     
     def generate_dataset(self, n_trajectories: int) -> Tuple[List[Trajectory], Dict[str, Any]]:
         """
-        Generate multiple trajectories to form a dataset.
+        Generate multiple trajectories to form a complete dataset.
+        
+        This method generates the specified number of trajectories, applies
+        deduplication if enabled, and returns both the trajectories and
+        deduplication statistics.
         
         Args:
-            n_trajectories: Number of trajectories to generate
-            
+            n_trajectories: Number of trajectories to generate (typically 100+)
+        
         Returns:
-            Tuple of (list of generated trajectories, deduplication_stats)
+            Tuple containing:
+                - List of Trajectory objects (after deduplication if enabled)
+                - Dictionary with deduplication statistics:
+                    - total_generated: Number of trajectories generated
+                    - duplicates_removed: Number of exact duplicates removed
+                    - final_count: Number of unique trajectories
+        
+        Note:
+            - Failed trajectory generations are logged but don't stop the process
+            - Progress is logged every 10 trajectories
+            - Deduplication is applied if enabled in config
         """
         logger.info(f"Starting generation of {n_trajectories} trajectories...")
         trajectories = []
