@@ -1,0 +1,21 @@
+{
+  "generator": {
+    "seed": 42,
+    "n_trajectories": 1,
+    "min_actions": 3,
+    "max_actions": 10,
+    "use_openrouter": true,
+    "workflow_distribution": {
+      "e_commerce": 0.4,
+      "form_filling": 0.3,
+      "research": 0.3
+    }
+  },
+  "output": {
+    "format": "jsonl",
+    "path": "output",
+    "sample_size": 1,
+    "include_dom_snapshot": false
+  }
+}
+

@@ -1,0 +1,10 @@
+# Core dependencies
+faker>=18.0.0
+numpy>=1.24.0
+jsonschema>=4.17.0
+openai>=1.0.0
+
+# Optional dependencies for Parquet support
+pyarrow>=12.0.0
+pandas>=2.0.0
+
