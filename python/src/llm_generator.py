@@ -9,6 +9,9 @@ from src.llm_schema_validator import (
     normalize_trajectory_structure,
     VALID_ACTION_TYPES
 )
+from src.logging_config import get_logger
+
+logger = get_logger('llm_generator')
 
 
 class LLMDataGenerator:
@@ -100,6 +103,7 @@ Make it realistic for modern web applications."""
             content = content.strip()
             
             data = json.loads(content)
+            logger.debug(f"Generated element data for {element_type}: selector={data.get('selector', 'N/A')[:50]}")
             return {
                 "selector": data.get("selector", f"#{element_type}"),
                 "element_text": data.get("element_text"),
@@ -108,7 +112,8 @@ Make it realistic for modern web applications."""
             }
         except Exception as e:
             # Fallback to simple selector on error
-            print(f"Warning: LLM generation failed: {e}. Using fallback.")
+            logger.warning(f"LLM element data generation failed for {element_type}: {e}. Using fallback.")
+            logger.debug(f"Element data generation error details:", exc_info=True)
             return {
                 "selector": f"#{element_type}-{context.lower().replace(' ', '-')}",
                 "element_text": None,
@@ -167,12 +172,14 @@ Make it realistic for modern web applications."""
             content = content.strip()
             
             data = json.loads(content)
+            logger.debug(f"Generated URL and title: url={data.get('url', 'N/A')[:50]}")
             return {
                 "url": data.get("url", f"https://{domain}"),
                 "page_title": data.get("page_title", f"{page_type.replace('_', ' ').title()} - {domain}")
             }
         except Exception as e:
-            print(f"Warning: LLM generation failed: {e}. Using fallback.")
+            logger.warning(f"LLM URL/title generation failed: {e}. Using fallback.")
+            logger.debug(f"URL/title generation error details:", exc_info=True)
             return {
                 "url": f"https://{domain}/{page_type}",
                 "page_title": f"{page_type.replace('_', ' ').title()} - {domain}"
@@ -321,6 +328,7 @@ IMPORTANT:
         try:
             # Try to use response_format for structured output if available
             # (OpenAI API supports response_format={"type": "json_object"})
+            logger.debug(f"Calling LLM API for trajectory structure generation (model: {self.model})")
             request_params = {
                 "model": self.model,
                 "messages": [
@@ -336,11 +344,13 @@ IMPORTANT:
             if any(x in self.model.lower() for x in ['gpt-4', 'gpt-3.5', 'o1']):
                 try:
                     request_params["response_format"] = {"type": "json_object"}
+                    logger.debug("Using JSON mode for structured output")
                 except Exception:
                     # If response_format not supported, continue without it
                     pass
             
             response = self.client.chat.completions.create(**request_params)
+            logger.debug("LLM API call completed successfully")
             
             content = response.choices[0].message.content.strip()
             # Remove markdown code blocks if present (backup in case model ignores instruction)
@@ -356,42 +366,49 @@ IMPORTANT:
             trajectory_structure = json.loads(content)
             
             # Validate structure before returning
+            logger.debug("Validating LLM response structure...")
             is_valid, errors = validate_trajectory_structure(trajectory_structure)
             if not is_valid:
-                print(f"Warning: LLM response validation found {len(errors)} issues:")
-                for error in errors[:5]:  # Show first 5 errors
-                    print(f"  - {error}")
+                logger.warning(f"LLM response validation found {len(errors)} issues")
+                for error in errors[:5]:  # Log first 5 errors
+                    logger.debug(f"  Validation error: {error}")
                 if len(errors) > 5:
-                    print(f"  ... and {len(errors) - 5} more issues")
+                    logger.debug(f"  ... and {len(errors) - 5} more validation issues")
                 
                 # Try to normalize and fix issues
                 try:
+                    logger.debug("Attempting to normalize trajectory structure...")
                     trajectory_structure = normalize_trajectory_structure(trajectory_structure)
                     # Re-validate after normalization
                     is_valid_after, errors_after = validate_trajectory_structure(trajectory_structure)
                     if is_valid_after:
-                        print("✓ Normalization fixed validation issues")
+                        logger.info("✓ Normalization fixed all validation issues")
                     elif len(errors_after) < len(errors):
-                        print(f"Warning: Normalization fixed some issues ({len(errors)} -> {len(errors_after)} remaining)")
+                        logger.info(f"Normalization fixed some issues ({len(errors)} -> {len(errors_after)} remaining)")
                         # Continue with normalized structure even if some issues remain
                         # (non-critical issues may be handled by conversion layer)
                     else:
-                        print(f"Warning: Normalization did not improve validation. {len(errors_after)} issues remain")
+                        logger.warning(f"Normalization did not improve validation. {len(errors_after)} issues remain")
                         # Still continue - conversion layer may handle missing fields
                 except Exception as norm_error:
-                    print(f"Warning: Normalization failed: {norm_error}. Proceeding with original structure.")
+                    logger.warning(f"Normalization failed: {norm_error}. Proceeding with original structure.")
+                    logger.debug(f"Normalization error details:", exc_info=True)
             
             return trajectory_structure
             
         except json.JSONDecodeError as e:
-            print(f"Warning: Failed to parse LLM response as JSON: {e}")
-            print("Response preview:", content[:200] if 'content' in locals() else "N/A")
+            logger.error(f"Failed to parse LLM response as JSON: {e}")
+            logger.debug(f"Response preview: {content[:200] if 'content' in locals() else 'N/A'}")
+            logger.debug("JSON parsing error details:", exc_info=True)
         except ValueError as e:
-            print(f"Warning: LLM response validation failed: {e}")
+            logger.error(f"LLM response validation failed: {e}")
+            logger.debug("Validation error details:", exc_info=True)
         except Exception as e:
-            print(f"Warning: LLM trajectory generation failed: {e}")
+            logger.error(f"LLM trajectory generation failed: {e}")
+            logger.debug("Trajectory generation error details:", exc_info=True)
         
         # Fallback to simple structure
+        logger.warning("Using fallback trajectory structure")
         return {
             "domain": f"example-{workflow_type}.com",
             "goal": goal,

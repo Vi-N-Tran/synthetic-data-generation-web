@@ -9,6 +9,9 @@
       "e_commerce": 0.4,
       "form_filling": 0.3,
       "research": 0.3
+    },
+    "deduplication": {
+      "enabled": true
     }
   },
   "output": {

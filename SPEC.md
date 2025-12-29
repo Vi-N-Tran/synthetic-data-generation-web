@@ -461,29 +461,87 @@ output/
 - Generate new ID if duplicate detected
 - Log warning for ID collisions
 
+**5. Trajectory-Level Deduplication:**
+- Detect exact duplicate trajectories (same action sequences)
+- Optional near-duplicate detection with configurable similarity threshold
+- Content-based fingerprinting using action sequences, URLs, and element data
+- Excludes temporal and ID information from fingerprint (focuses on content)
+- Removes duplicates to ensure dataset diversity
+- Reports deduplication statistics (counts, duplicate pairs)
+- Configurable deduplication mode (exact only, or exact + near-duplicates)
+
 **5. Circular Navigation Loops:**
 - Detect excessive back/forward patterns (e.g., > 5 consecutive back/forward)
 - Break loops or flag as exploratory behavior
 - Prevent infinite navigation cycles
 
-**6. Type Mismatches:**
+**7. Type Mismatches:**
 - Ensure timestamp is float (not string)
 - Validate option_index is integer
 - Ensure coordinates dict has int values (not strings)
 - Validate boolean fields are actually boolean
 
-**7. Text Input Edge Cases:**
+**8. Text Input Edge Cases:**
 - Extremely long text values (> 10K characters) - truncate or reject
-- Special characters requiring encoding (Unicode, emoji, control characters)
-- Empty strings vs None values (ensure consistent handling)
 
-**8. Serialization Issues:**
+### 5.3 Trajectory Deduplication
+
+**Purpose:**
+Ensure dataset diversity by removing duplicate and near-duplicate trajectories that provide no additional information for ML training.
+
+**Exact Duplicate Detection:**
+- Content-based fingerprinting using SHA256 hash of:
+  - Action sequence (action types, element types, selectors)
+  - URLs and page titles (normalized)
+  - Action parameters (values, option_index)
+  - Workflow type and goal
+- Excludes from fingerprint:
+  - Timestamps (temporal information)
+  - Trajectory/action IDs (metadata)
+  - Session/tab IDs (metadata)
+- Two trajectories with identical fingerprints are considered exact duplicates
+- First occurrence is kept, subsequent duplicates are removed
+
+**Near-Duplicate Detection (Optional):**
+- Similarity scoring based on:
+  - Action sequence alignment (action types and order)
+  - Element type matching
+  - URL path similarity
+  - Goal matching
+- Configurable similarity threshold (default: 0.9 = 90% similar)
+- More computationally expensive than exact duplicate detection
+- Applied after exact duplicate removal
+
+**Implementation Details:**
+- Deduplication runs after trajectory generation but before final validation
+- Statistics reported: original count, exact duplicates removed, near-duplicates removed
+- Duplicate information logged (trajectory IDs, similarity scores) for analysis
+- Configurable via generator config:
+  ```json
+  {
+    "generator": {
+      "deduplication": {
+        "enabled": true,
+        "mode": "exact_only",  // or "exact_and_near"
+        "similarity_threshold": 0.9  // for near-duplicate detection
+      }
+    }
+  }
+  ```
+
+**Benefits:**
+- Prevents over-representation of common patterns
+- Ensures dataset diversity for better ML generalization
+- Reduces dataset size while maintaining information content
+- Identifies LLM generation patterns (if many duplicates appear, may indicate prompt issues)
+
+**9. Serialization Issues:**
 - Circular references in nested structures
 - Non-serializable objects
 - Very large objects causing memory issues
 - Encoding issues with special characters
 
-**9. Resource Exhaustion:**
+**10. Resource Exhaustion:**
 - Extremely long selectors (> 500 chars) - validate or truncate
 - Memory issues with large nested structures
 - Generation timeouts for complex workflows
@@ -507,6 +565,7 @@ python/
 │   ├── validator.py            # Validation logic
 │   ├── statistics.py           # Statistics computation
 │   ├── writer.py               # DatasetWriter implementation
+│   ├── deduplication.py        # Trajectory deduplication logic
 │   └── utils.py                # Helper functions
 ├── config/
 │   └── generator_config.json   # Configuration file
@@ -589,15 +648,15 @@ python/
 
 **LLM Generation Implementation:**
 - Use OpenAI API with appropriate model (e.g., gpt-4o-mini for cost efficiency)
-- Temperature settings: 0.2-0.3 for structured data generation
+- Temperature settings: configurable
 - Prompt engineering: Clear instructions with schema examples
 - Error handling: Graceful fallback if LLM calls fail
-- Cost optimization: Batch requests where possible, use efficient models
+- Cost optimization: Batch requests where possible, use efficient models (future implementation)
 
 **Performance Considerations:**
 - Lazy generation (generate on-demand)
 - Streaming writes (don't hold all trajectories in memory)
-- LLM API rate limiting and retry logic
+- LLM API rate limiting and retry logic (future implementation)
 - Cache LLM responses for similar requests (optional optimization)
 
 ---
@@ -667,7 +726,7 @@ python/
 
 **Implementation:** `is_intentional` flag and `user_intent` field distinguish these. LLM-generated trajectories include intentional actions by default, with user type influencing the pattern (e.g., first-time users may have more exploratory behavior).
 
-### 7.4 Realism vs Efficiency Trade-off
+### 7.4 Realism vs Efficiency Trade-off 
 
 **Realism Techniques:**
 - LLM-generated trajectories capture realistic user behavior patterns
@@ -700,25 +759,7 @@ python/
 
 ## 8. ML Training Considerations
 
-### 8.1 Feature Engineering
-
-**Sequence Features:**
-- Action type sequences (for sequence models)
-- Temporal intervals (for timing prediction)
-- Element type transitions (for navigation patterns)
-
-**Context Features:**
-- Page context (URL, title) for each action
-- DOM structure (for element selection models)
-- User profile (for personalization)
-
-**Target Variables:**
-- Next action prediction
-- Element selection
-- Action timing
-- Goal completion
-
-### 8.2 Model Training Scenarios
+### 8.1 Model Training Scenarios
 
 **1. Next Action Prediction:**
 - Input: Previous N actions + current context
@@ -740,7 +781,7 @@ python/
 - Output: Time until next action
 - Use: Wait time optimization
 
-### 8.3 Dataset Splits
+### 8.2 Dataset Splits (added based on common training split)
 
 - **Train**: 70% (70 trajectories)
 - **Validation**: 15% (15 trajectories)
@@ -819,11 +860,51 @@ mypy>=1.0.0               # Type checking
 
 1. **Enhanced LLM Integration**: Expand LLM usage for more complex scenarios (multi-step workflows, error recovery patterns, advanced user behaviors)
 2. **Visual Features**: Add screenshot embeddings for visual element selection
-3. **Multi-modal**: Include audio/voice interaction patterns
-4. **Real-time**: Stream generation for continuous dataset updates
-5. **A/B Testing**: Generate variants for model comparison
-6. **Domain Adaptation**: Fine-tune generation for specific websites
-7. **Interactive Generation**: Allow user feedback to improve realism
+3. **Multi-modal**: Include image/audio/voice interaction patterns
+4. **A/B Testing**: Generate variants for model comparison
+5. **Domain Adaptation**: Fine-tune generation for specific websites
+
+### 11.1 Real User Data Integration
+
+**Objective:** Allow seamless ingestion of anonymized real user interaction data into the synthetic generation pipeline.
+
+**Considerations:**
+
+- **Privacy**: Strip personally identifiable information (PII) and sensitive fields (emails, passwords, tokens).
+- **Sanitization & Normalization**: Standardize selectors, URLs, and DOM structure across sessions.
+- **Hybrid Datasets**: Mix synthetic and real trajectories to improve model robustness.
+- **Schema Alignment**: Ensure real user data maps cleanly to `BrowserAction` and `Trajectory` schemas.
+
+### 11.2 Enhanced Validation
+
+**Additional Checks:**
+
+- **Cross-trajectory consistency**: Validate that related workflows don't contradict each other (e.g., cart never emptied mid-transaction).
+- **Temporal realism**: Check for unrealistic action intervals or simultaneous conflicting actions.
+- **Domain-specific rules**: Workflow-specific constraints (e.g., e-commerce: checkout only after add-to-cart).
+- **Selector sanity**: Validate element selectors against real or reference DOM structures.
+- **LLM output verification**: Automatically detect hallucinated URLs, page titles, or action sequences.
+
+### 11.3 Prevention of Model Overfitting
+
+**Synthetic Variability:**
+
+- Ensure multiple paths to the same goal exist (trajectory diversification).
+- Increase action sequence diversity for similar workflows.
+- Vary element selectors, URLs, and page titles even for similar actions.
+- Introduce controlled randomness in user behavior patterns.
+
+### 11.6 Feedback Loop for Data Quality
+
+**Objective:** Implement mechanisms to monitor ML model performance on generated datasets and iteratively improve data quality.
+
+**Components:**
+
+- **Performance Monitoring**: Track ML model performance metrics (accuracy, loss, generalization) on generated datasets.
+- **Iterative Refinement**: Use model performance signals to iteratively refine generation parameters and LLM prompts.
+- **Human-in-the-Loop Validation**: Enable human validation for high-value workflows to identify quality issues and improve generation.
+- **Quality Metrics**: Define and track data quality metrics that correlate with model performance.
+- **Automated Feedback**: Automatically adjust generation parameters based on model performance feedback.
 
 ---
 

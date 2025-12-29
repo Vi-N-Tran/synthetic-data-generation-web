@@ -2,7 +2,7 @@
 
 import random
 import time
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 from src.schema import BrowserAction, Trajectory
 from src.llm_generator import LLMDataGenerator
 from src.actions import (
@@ -16,6 +16,10 @@ from src.utils import (
     get_reading_time, calculate_typing_time, get_typing_speed_wpm,
     get_domain, USER_TYPES, DEVICE_TYPES, BROWSER_TYPES
 )
+from src.deduplication import deduplicate_trajectories
+from src.logging_config import get_logger
+
+logger = get_logger('generator')
 
 
 class TrajectoryGenerator:
@@ -231,6 +235,7 @@ class TrajectoryGenerator:
         # Select workflow type and goal
         workflow_type = kwargs.get('workflow_type') or self._select_workflow_type()
         goal = kwargs.get('goal') or self._select_goal(workflow_type)
+        logger.debug(f"Generating trajectory: workflow={workflow_type}, goal={goal}")
         
         # Select user characteristics
         user_type = kwargs.get('user_type') or random.choice(USER_TYPES)
@@ -252,35 +257,41 @@ class TrajectoryGenerator:
         
         # Validate structure (additional check after LLM validation)
         if not trajectory_structure or 'actions' not in trajectory_structure:
+            logger.error("LLM returned invalid trajectory structure: missing 'actions' field")
             raise ValueError("LLM returned invalid trajectory structure: missing 'actions' field")
         
         # Extract domain and goal info
         domain = trajectory_structure.get('domain') or get_domain(workflow_type)
         goal_achieved = trajectory_structure.get('goal_achieved', True)
         actions_data = trajectory_structure.get('actions', [])
+        logger.debug(f"Trajectory structure: domain={domain}, {len(actions_data)} actions")
         
         # Ensure we have at least some actions
         if not actions_data or len(actions_data) == 0:
+            logger.error("LLM returned trajectory structure with no actions")
             raise ValueError("LLM returned trajectory structure with no actions")
         
         # Limit to num_actions to respect configuration
         if len(actions_data) > num_actions:
             actions_data = actions_data[:num_actions]
-            print(f"Warning: LLM returned {len(actions_data)} actions, limiting to {num_actions}")
+            logger.debug(f"Limited actions from {len(actions_data)} to {num_actions}")
         
         # Generate IDs
         trajectory_id = generate_id('traj')
         session_id = generate_id('session')
         tab_id = generate_id('tab')
+        logger.debug(f"Generated IDs: trajectory={trajectory_id}, session={session_id}, tab={tab_id}")
         
         # Convert actions to BrowserAction objects
         start_time = get_timestamp()
         timestamp = start_time
         browser_actions = []
+        failed_actions = 0
         
         for i, action_data in enumerate(actions_data):
             try:
                 action_id = f"action_{i+1:03d}"
+                logger.debug(f"Converting action {i+1}/{len(actions_data)}: {action_data.get('action_type', 'unknown')}")
                 browser_action = self._convert_action_to_browser_action(
                     action_data=action_data,
                     timestamp=timestamp,
@@ -293,12 +304,20 @@ class TrajectoryGenerator:
                 browser_actions.append(browser_action)
                 timestamp = browser_action.timestamp  # Use the timestamp from the action
             except Exception as e:
-                print(f"Warning: Failed to convert action {i+1}: {e}. Skipping action.")
+                failed_actions += 1
+                logger.warning(f"Failed to convert action {i+1}: {e}")
+                logger.debug(f"Action conversion error details:", exc_info=True)
                 continue
+        
+        if failed_actions > 0:
+            logger.warning(f"{failed_actions} actions failed conversion")
         
         # Ensure we have at least 3 actions (minimum required)
         if len(browser_actions) < 3:
+            logger.error(f"Too few valid actions after conversion: {len(browser_actions)}. Need at least 3.")
             raise ValueError(f"Too few valid actions after conversion: {len(browser_actions)}. Need at least 3.")
+        
+        logger.debug(f"Successfully converted {len(browser_actions)} actions")
         
         end_time = timestamp
         duration = (end_time - start_time) / 1000.0  # Convert to seconds
@@ -323,7 +342,7 @@ class TrajectoryGenerator:
         
         return trajectory
     
-    def generate_dataset(self, n_trajectories: int) -> List[Trajectory]:
+    def generate_dataset(self, n_trajectories: int) -> Tuple[List[Trajectory], Dict[str, Any]]:
         """
         Generate multiple trajectories to form a dataset.
         
@@ -331,17 +350,52 @@ class TrajectoryGenerator:
             n_trajectories: Number of trajectories to generate
             
         Returns:
-            List of generated trajectories
+            Tuple of (list of generated trajectories, deduplication_stats)
         """
+        logger.info(f"Starting generation of {n_trajectories} trajectories...")
         trajectories = []
+        failed_count = 0
+        
         for i in range(n_trajectories):
             try:
+                logger.debug(f"Generating trajectory {i + 1}/{n_trajectories}...")
                 trajectory = self.generate_trajectory()
                 trajectories.append(trajectory)
+                logger.debug(f"Trajectory {i + 1} generated: {trajectory.trajectory_id} ({len(trajectory.actions)} actions)")
+                
                 if (i + 1) % 10 == 0:
-                    print(f"Generated {i + 1}/{n_trajectories} trajectories...")
+                    logger.info(f"Progress: {i + 1}/{n_trajectories} trajectories generated")
             except Exception as e:
-                print(f"Warning: Failed to generate trajectory {i+1}: {e}")
+                failed_count += 1
+                logger.warning(f"Failed to generate trajectory {i+1}: {e}", exc_info=False)
+                logger.debug(f"Trajectory {i+1} generation error details:", exc_info=True)
                 continue
-        return trajectories
+        
+        if failed_count > 0:
+            logger.warning(f"{failed_count} trajectory generation attempts failed")
+        
+        logger.info(f"Generated {len(trajectories)} trajectories (target: {n_trajectories})")
+        
+        # Apply deduplication if enabled
+        dedup_config = self.config.get('generator', {}).get('deduplication', {})
+        if dedup_config.get('enabled', True):  # Enabled by default
+            logger.info("Applying deduplication (exact duplicates only)...")
+            deduplicated, dedup_stats = deduplicate_trajectories(trajectories)
+            
+            if dedup_stats['exact_duplicates_count'] > 0:
+                logger.info(f"Removed {dedup_stats['exact_duplicates_count']} exact duplicates")
+                logger.debug(f"Deduplication reduced from {dedup_stats['original_count']} to {dedup_stats['final_count']} trajectories")
+            
+            return deduplicated, dedup_stats
+        else:
+            logger.debug("Deduplication disabled")
+            # No deduplication
+            return trajectories, {
+                "original_count": len(trajectories),
+                "exact_duplicates_count": 0,
+                "near_duplicates_count": 0,
+                "final_count": len(trajectories),
+                "exact_duplicates_info": [],
+                "near_duplicates_info": []
+            }
 

@@ -5,6 +5,9 @@ import os
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from src.schema import Trajectory
+from src.logging_config import get_logger
+
+logger = get_logger('writer')
 
 
 def _get_timestamped_filename(base_path: str, base_name: str, extension: str) -> str:
@@ -82,15 +85,17 @@ class DatasetWriter:
         # Store the actual output file path for metadata/stats files
         self._actual_output_file = output_file
         
-        print(f"Writing {len(trajectories)} trajectories to {output_file}...")
+        logger.info(f"Writing {len(trajectories)} trajectories to {output_file}...")
         
         with open(output_file, 'w', encoding='utf-8') as f:
-            for trajectory in trajectories:
+            for i, trajectory in enumerate(trajectories):
                 trajectory_dict = trajectory.to_dict()
                 json_line = json.dumps(trajectory_dict, ensure_ascii=False)
                 f.write(json_line + '\n')
+                if (i + 1) % 100 == 0:
+                    logger.debug(f"Written {i + 1}/{len(trajectories)} trajectories...")
         
-        print(f"✓ Written {len(trajectories)} trajectories to {output_file}")
+        logger.info(f"✓ Written {len(trajectories)} trajectories to {output_file}")
     
     def _write_parquet(self, trajectories: List[Trajectory], config: Dict[str, Any]) -> None:
         """Write trajectories to Parquet format with optional JSONL sample"""
@@ -124,9 +129,10 @@ class DatasetWriter:
         # Store the actual output file path
         self._actual_output_file = output_file
         
-        print(f"Writing {len(trajectories)} trajectories to Parquet format...")
+        logger.info(f"Writing {len(trajectories)} trajectories to Parquet format...")
         
         # Flatten trajectories into actions with trajectory metadata
+        logger.debug("Flattening trajectories into action rows...")
         rows = []
         for trajectory in trajectories:
             trajectory_dict = trajectory.to_dict()
@@ -148,6 +154,7 @@ class DatasetWriter:
         df = pd.DataFrame(rows)
         
         # Write to Parquet
+        logger.debug(f"Writing DataFrame with {len(df)} rows to Parquet file...")
         df.to_parquet(
             output_file,
             engine='pyarrow',
@@ -155,7 +162,7 @@ class DatasetWriter:
             index=False
         )
         
-        print(f"✓ Written {len(trajectories)} trajectories ({len(df)} actions) to {output_file}")
+        logger.info(f"✓ Written {len(trajectories)} trajectories ({len(df)} actions) to {output_file}")
         
         # Generate sample JSONL file for human inspection
         sample_size = config.get('sample_size', 10)
@@ -165,14 +172,14 @@ class DatasetWriter:
         base_name = output_file.rsplit('.parquet', 1)[0]
         sample_file = f"{base_name}_sample.jsonl"
         self._sample_file = sample_file
-        print(f"Generating sample file with {len(sample_trajectories)} trajectories...")
+        logger.info(f"Generating sample file with {len(sample_trajectories)} trajectories...")
         # Temporarily override the write_jsonl to use the exact sample filename
         with open(sample_file, 'w', encoding='utf-8') as f:
             for trajectory in sample_trajectories:
                 trajectory_dict = trajectory.to_dict()
                 json_line = json.dumps(trajectory_dict, ensure_ascii=False)
                 f.write(json_line + '\n')
-        print(f"✓ Sample written to {sample_file}")
+        logger.info(f"✓ Sample written to {sample_file}")
     
     def write_metadata(self, trajectories: List[Trajectory], generator_config: Dict[str, Any]) -> None:
         """Write dataset metadata file"""
@@ -199,7 +206,7 @@ class DatasetWriter:
         with open(metadata_file, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
         
-        print(f"✓ Metadata written to {metadata_file}")
+        logger.info(f"✓ Metadata written to {metadata_file}")
     
     def write_statistics(self, statistics: Dict[str, Any]) -> None:
         """Write computed statistics to file"""
@@ -217,7 +224,7 @@ class DatasetWriter:
         with open(stats_file, 'w', encoding='utf-8') as f:
             json.dump(statistics, f, indent=2, ensure_ascii=False)
         
-        print(f"✓ Statistics written to {stats_file}")
+        logger.info(f"✓ Statistics written to {stats_file}")
     
     def get_output_files(self) -> Dict[str, str]:
         """Get the actual output file paths that were written"""

@@ -3,6 +3,9 @@
 from typing import List, Dict, Any
 from src.schema import Trajectory, BrowserAction
 import re
+from src.logging_config import get_logger
+
+logger = get_logger('validator')
 
 
 def validate_trajectory(trajectory: Trajectory) -> bool:
